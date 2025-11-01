@@ -1,0 +1,1736 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Vokabeltrainer — Modern PWA</title>
+
+<link rel="manifest" href="manifest.json">
+<script>
+    // Registriert den Service Worker für Offline-Fähigkeit
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('service-worker.js').then(function(registration) {
+          console.log('ServiceWorker registriert: ', registration.scope);
+        }, function(err) {
+          console.log('ServiceWorker Registrierung fehlgeschlagen: ', err);
+        });
+      });
+    }
+</script>
+
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="icons/icon-192x192.png"> 
+
+<style>
+/* --- Variablen & Reset --- */
+:root{
+  --bg1:#ffecd2; --bg2:#fcb69f;
+  --card:#ffffff; --muted:#666;
+  --accent1:#7bdff6; --accent2:#7aa7ff;
+  --accent-dark:#3867d6;
+  --text-color:#14213d;
+  --shadow-sm:0 6px 18px rgba(2,6,23,0.04);
+  --shadow-md:0 8px 30px rgba(0,0,0,0.12);
+  --shadow-lg:0 10px 30px rgba(2,6,23,0.08);
+}
+*{box-sizing:border-box}
+body{
+  margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;
+  background: linear-gradient(120deg,var(--bg1),var(--bg2));
+  min-height:100vh;color:var(--text-color);
+  display:flex;
+  gap:18px;
+  padding:28px;
+}
+.muted{color:var(--muted)}
+.success{color:#25a05a;font-weight:600}
+.error{color:#ff595e;font-weight:600}
+
+/* --- Layout --- */
+.sidebar{
+  width:260px;background:linear-gradient(180deg,rgba(255,255,255,0.9),rgba(255,255,255,0.8));
+  border-radius:16px;padding:18px;box-shadow:var(--shadow-md);
+  display:flex;flex-direction:column;gap:12px;height:calc(100vh - 56px);
+  overflow:auto;
+  transition: transform 0.3s ease-out;
+}
+.brand{font-weight:700;font-size:18px;display:flex;align-items:center;gap:10px}
+.brand .logo{width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,var(--accent1),var(--accent2));display:flex;align-items:center;justify-content:center;color:#05386b;font-weight:800}
+.folders{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+.folder{
+  padding:10px;border-radius:10px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;
+  transition:0.15s;background:transparent;color:var(--muted);
+}
+.folder:hover{background: rgba(0,0,0,0.04)}
+.folder.active{background:linear-gradient(90deg,var(--accent1),var(--accent2));color:white;box-shadow:var(--shadow-sm)}
+.folder span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sidebar .controls{display:flex;gap:8px;margin-top:auto;flex-wrap:wrap}
+
+/* --- Buttons --- */
+.btn{padding:8px 10px;border-radius:10px;border:none;cursor:pointer;background:var(--accent-dark);color:white;font-weight:600;white-space:nowrap;transition:transform 0.1s}
+.btn:active{transform:scale(0.98)}
+.btn.ghost{background:transparent;color:var(--accent-dark);border:1px solid rgba(0,0,0,0.06)}
+.small{padding:6px 8px;font-size:14px}
+.btn.correct{background:#25a05a}
+.btn.wrong{background:#ff595e}
+.btn.audio{background:var(--accent2);width:35px;height:35px;padding:0;display:flex;align-items:center;justify-content:center;font-size:18px}
+
+/* --- Main area --- */
+.main{flex:1;display:flex;flex-direction:column;gap:14px;height:calc(100vh - 56px)}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.title-group{display:flex;align-items:center;gap:12px}
+.title{font-size:20px;font-weight:700}
+.status-badge{font-size:14px;font-weight:600;padding:4px 8px;border-radius:6px;background:rgba(0,0,0,0.06)}
+.actions{display:flex;gap:8px;align-items:center}
+.panel{
+  background:linear-gradient(180deg,rgba(255,255,255,0.95),white);
+  border-radius:14px;padding:18px;box-shadow:var(--shadow-lg);flex:1;overflow:auto;
+}
+
+/* --- Card / Review --- */
+.preview{display:flex;gap:20px;align-items:center}
+.preview.word-word .imgwrap{display:none;} 
+.preview.image-first .meta{flex:1;order:2}
+.preview.image-first .imgwrap{order:1}
+
+.preview .imgwrap{flex-shrink:0;width:260px;height:180px;border-radius:12px;background:#f3f6fb;display:flex;align-items:center;justify-content:center;overflow:hidden;box-shadow:0 8px 20px rgba(3,7,18,0.06);text-align:center;color:var(--muted);font-size:14px}
+.preview img{max-width:100%;max-height:100%;display:block}
+.preview .meta{flex:1}
+.wordbig-group{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.wordbig{font-size:28px;font-weight:700;}
+.review-actions{display:flex;gap:8px;margin-top:12px}
+.translation-hint{font-size:18px;font-style:italic;color:var(--muted)}
+.review-actions .btn:first-child{margin-left:0}
+
+/* --- Statistik --- */
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.stat-box{padding:15px;border-radius:12px;background:#f3f6fb;text-align:center;box-shadow:var(--shadow-sm)}
+.stat-box .number{font-size:30px;font-weight:800;margin-bottom:4px}
+.stat-box .label{font-size:14px;color:var(--muted)}
+
+/* --- List --- */
+.list{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-top:12px}
+.card{
+  background:linear-gradient(180deg,white,#f8fbff);padding:12px;border-radius:12px;box-shadow:var(--shadow-sm);
+  display:flex;flex-direction:column;gap:10px;
+}
+.card img{width:100%;height:100px;object-fit:cover;border-radius:8px}
+.tiny{font-size:13px;color:var(--muted)}
+
+/* --- Test View / Challenge View --- */
+.test-options{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+  margin-top:20px;
+}
+.option-btn{
+  padding:15px;
+  background:#f3f6fb;
+  border:1px solid rgba(0,0,0,0.1);
+  border-radius:10px;
+  text-align:center;
+  cursor:pointer;
+  font-weight:600;
+  transition:0.2s;
+}
+.option-btn:hover{background:#e0e8f0}
+.option-btn.selected{border-color:var(--accent-dark);background:#e0e8f0}
+.option-btn.correct-choice{background:#25a05a;color:white}
+.option-btn.wrong-choice{background:#ff595e;color:white}
+
+/* Buchstaben Challenge UI */
+.challenge-target{
+    min-height: 40px;
+    border-bottom: 2px solid var(--accent-dark);
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: 5px;
+    margin-bottom: 20px;
+    padding: 5px 0;
+    word-break: break-all;
+    display: flex;
+    gap: 5px;
+}
+.challenge-target span {
+    border-bottom: 2px solid #ccc;
+    flex-grow: 1;
+    text-align: center;
+}
+.challenge-options{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    margin-top: 15px;
+}
+.challenge-options button{
+    padding: 10px 12px;
+    font-size: 18px;
+    font-weight: 700;
+    background: #f3f6fb;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: 0.1s;
+}
+.challenge-options button:hover:not(:disabled){
+    background: #e0e8f0;
+}
+.challenge-options button:disabled{
+    opacity: 0.4;
+    cursor: default;
+}
+
+/* --- Mobile Responsive Optimierungen --- */
+@media (max-width:900px){
+  body{padding:14px;flex-direction:column;position:relative}
+  .sidebar{
+    width:calc(100% - 28px);height:calc(100vh - 28px);order:2;position:fixed;top:14px;left:14px;z-index:900;
+    transform: translateX(-105%);
+  }
+  .sidebar.open{transform: translateX(0)}
+  .main{order:1;width:100%}
+  .topbar{flex-direction:column;align-items:flex-start}
+  .actions{width:100%;justify-content:space-between;margin-top:10px}
+  .preview{flex-direction:column;align-items:flex-start;gap:12px}
+  .preview .imgwrap{width:100%;height:180px}
+  #mobileToggle{display:inline-block;margin-right:10px}
+  .title-group{flex-direction:column;align-items:flex-start;gap:6px}
+  .stats-grid{grid-template-columns:1fr}
+  .test-options{grid-template-columns:1fr}
+}
+@media (min-width:901px){
+  #mobileToggle{display:none}
+}
+</style>
+</head>
+<body>
+
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+        <div class="logo">VT</div> 
+        <div>Vokabeltrainer</div>
+        <button id="closeSidebarBtn" class="btn small ghost" onclick="toggleSidebar()" style="margin-left:auto">✖</button>
+    </div>
+
+    <div style="margin-top:8px;font-size:13px;color:var(--muted)">Kategorien</div>
+    <div class="folders" id="folders"></div>
+
+    <div style="margin-top:8px;font-size:13px;color:var(--muted)">Neue Kategorie</div>
+    <div style="display:flex;gap:8px">
+      <input id="newFolderName" placeholder="z. B. Obst" style="flex:1;padding:8px;border-radius:8px;border:1px solid rgba(0,0,0,0.08)">
+      <button class="btn small" onclick="createFolder()">➕</button>
+    </div>
+
+    <div class="controls">
+      <button class="btn ghost small" onclick="exportAll()">⤓ Export</button>
+      <label class="btn ghost small" style="display:inline-flex;align-items:center;gap:8px;cursor:pointer">
+        ⤒ Import <input id="importFile" type="file" accept="application/json" style="display:none" onchange="importFile(event)">
+      </label>
+      <button class="btn ghost small" onclick="resetAll()">♻️ Reset</button>
+    </div>
+
+    <div style="margin-top:10px;font-size:12px;color:var(--muted)">Hinweis: Dateien & Bilder bleiben lokal in deinem Browser (localStorage).</div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div class="title-group">
+        <button id="mobileToggle" class="btn small ghost" onclick="toggleSidebar()">☰ Menü</button>
+        <div class="title" id="mainTitle" style="display:inline-block">Wähle eine Kategorie</div>
+        <div id="statusBadge" class="status-badge" style="display:none"></div>
+      </div>
+      <div class="actions">
+        <button class="btn small" id="btnAddCard" onclick="showAddCard()">➕ Karte</button>
+        <button class="btn small" id="btnStartReview" onclick="startReview()">▶️ Review</button>
+        <button class="btn ghost small" id="btnShowList" onclick="showList()">📋 Liste</button>
+        <button class="btn ghost small" id="btnShowStats" onclick="showStats()">📊 Status</button>
+      </div>
+    </div>
+
+    <section class="panel" id="panel">
+      <div id="empty" style="text-align:center;color:var(--muted)">
+        <div style="font-size:22px;font-weight:700;margin-bottom:6px">Los geht's!</div>
+        <div>Erstelle links (oder im Menü ☰) eine Kategorie und füge Karten hinzu. Klicke dann auf <strong>Review</strong>, um zu lernen.</div>
+      </div>
+
+      <div id="addForm" style="display:none">
+        <div style="font-weight:700;font-size:18px" id="addFormTitle">Neue Vokabel hinzufügen</div>
+        
+        <div style="margin-top:12px;font-size:14px;font-weight:600">Kartentyp:</div>
+        <div class="formrow">
+          <select id="cardTypeSelect" onchange="updateAddForm()">
+            <option value="word-image">Wort (Vorderseite) — Bild (Rückseite)</option>
+            <option value="image-word">Bild (Vorderseite) — Wort (Rückseite)</option>
+            <option value="word-word">Wort (Vorderseite) — Vokabel (Rückseite)</option>
+          </select>
+        </div>
+        
+        <div style="margin-top:12px;font-size:14px;font-weight:600">Sprache der Vorderseite (für Audio):</div>
+        <div class="formrow">
+            <select id="languageInput">
+                <option value="en">Englisch</option>
+                <option value="de">Deutsch</option>
+                <option value="es">Spanisch</option>
+                <option value="fr">Französisch</option>
+                <option value="it">Italienisch</option>
+            </select>
+        </div>
+
+        <div style="margin-top:12px;font-size:14px;font-weight:600" id="frontsideLabel">Vorderseite (Wort):</div>
+        <input id="wordInput" type="text" placeholder="Wort (z. B. der Apfel)" style="width:100%;margin-top:6px">
+        
+        <div style="margin-top:12px;font-size:14px;font-weight:600" id="backsideLabel">Rückseite (Bild):</div>
+        <div class="formrow" style="flex-direction:column;align-items:stretch">
+          <input id="translationInput" type="text" placeholder="Übersetzung (z. B. the apple)" style="display:none">
+          <input id="imageInput" type="file" accept="image/*">
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button class="btn" id="saveCardBtn" onclick="addCardFromForm()" style="flex:1">Hinzufügen</button>
+            <button class="btn ghost" onclick="hidePanels()" style="flex:1">Abbrechen</button>
+          </div>
+        </div>
+        
+        <div style="margin-top:10px;font-size:13px;color:var(--muted)">Tipp: nutze kleine Bilder (<1MB), sonst wird localStorage schnell groß.</div>
+      </div>
+
+      <div id="listView" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+          <div style="font-weight:700">Karten</div>
+          <div><input id="filterInput" placeholder="Filter..." oninput="renderList()" style="padding:6px;border-radius:8px;border:1px solid rgba(0,0,0,0.08)"></div>
+        </div>
+        <div class="list" id="cardsGrid" style="margin-top:12px"></div>
+        <div id="listEmpty" style="text-align:center;color:var(--muted);margin-top:30px;display:none">Keine Karten gefunden.</div>
+      </div>
+
+      <div id="reviewView" style="display:none">
+        <div style="margin-bottom:15px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+          <div style="font-weight:700;font-size:16px">Lernmodus:</div>
+          <select id="reviewModeSelect" style="padding:6px;font-size:14px">
+            <option value="show">A. Karte zeigen & klicken</option>
+            <option value="type">B. Antwort eintippen</option>
+          </select>
+          <button class="btn small" onclick="showTestView()">🎲 Test-Modus (MC)</button>
+          <button class="btn small" onclick="showChallengeView()">🧩 Buchstaben-Challenge</button>
+        </div>
+
+        <div class="preview" id="previewContainer">
+          <div class="imgwrap">
+              <img id="previewImage" src="" alt="">
+              <div id="wordWordHint" style="padding:10px;display:none"></div>
+          </div>
+          <div class="meta">
+            <div class="wordbig-group">
+                <div class="wordbig" id="previewWord">Wort</div>
+                <button class="btn audio" id="btnAudio" onclick="speakWord()">🔊</button>
+            </div>
+            
+            <input type="text" id="typeInput" placeholder="Deine Antwort hier..." style="width:100%;font-size:18px;margin-bottom:10px;display:none">
+
+            <div class="translation-hint" id="previewTranslation"></div>
+            <div class="muted" id="previewMeta">Korrekt: — • Falsch: —</div>
+            
+            <div id="reviewTypingResult" style="margin-top:10px;font-weight:700;display:none"></div>
+
+            <div class="review-actions" id="reviewButtons" style="margin-top:10px">
+              <button class="btn wrong" id="btnWrong" onclick="markWrong()">✖ Ich wusste nicht</button>
+              <button class="btn correct" id="btnCorrect" onclick="markCorrect()">✔ Ich wusste</button>
+              <button class="btn ghost" id="btnShowAnswer" onclick="showAnswer()">🔍 Antwort zeigen</button>
+              <button class="btn" id="btnCheckAnswer" onclick="checkTypedAnswer()" style="display:none">Prüfen</button>
+              <button class="btn correct" id="btnContinue" onclick="continueReview()" style="display:none">Weiter ▶️</button>
+            </div>
+          </div>
+        </div>
+        
+        <div id="sessionReviewStatus" style="margin-top:20px; text-align:center; font-weight:600; display:none"></div>
+      </div>
+
+      <div id="testView" style="display:none">
+        <div style="font-weight:700;font-size:18px;margin-bottom:15px">🎲 Test-Modus: Wähle die korrekte Übersetzung</div>
+        
+        <div id="testCardArea" class="preview" style="align-items:flex-start">
+            <div class="imgwrap" style="width:150px;height:100px;font-size:12px" id="testImage">Bild</div>
+            <div class="meta" style="flex:1">
+                <div class="wordbig-group">
+                    <div class="wordbig" id="testWord">Wort / Satz</div>
+                    <button class="btn audio" id="btnTestAudio" onclick="speakTestWord()">🔊</button>
+                </div>
+                <div class="muted" style="font-size:14px" id="testMeta">Karte X von Y</div>
+            </div>
+        </div>
+
+        <div class="test-options" id="testOptions">
+            </div>
+        
+        <div id="testResult" style="font-weight:700;font-size:16px;margin-top:15px;display:none"></div>
+        
+        <button class="btn" id="btnTestNext" onclick="nextTestCard()" style="margin-top:15px;display:none">Nächste Frage ▶️</button>
+
+        <div id="testEnd" style="text-align:center;color:var(--muted);margin-top:30px;display:none">
+            <div style="font-size:22px;font-weight:700;margin-bottom:6px">Test beendet!</div>
+            <div id="testScore"></div>
+            <button class="btn" onclick="showList()" style="margin-top:15px">Zurück zur Liste</button>
+        </div>
+      </div>
+      
+      <div id="challengeView" style="display:none">
+        <div style="font-weight:700;font-size:18px;margin-bottom:15px">🧩 Buchstaben-Challenge</div>
+        
+        <div class="preview" style="align-items:flex-start; margin-bottom: 20px;">
+            <div class="meta" style="flex:1">
+                <div style="font-size:20px; font-weight:600; color: var(--muted);" id="challengePrompt">Wort</div>
+                <div class="wordbig-group" style="margin-top:5px">
+                    <div class="wordbig" id="challengeWord"></div>
+                    <button class="btn audio" id="btnChallengeAudio" onclick="speakChallengeWord()">🔊</button>
+                </div>
+                <div class="muted" style="font-size:14px" id="challengeMeta">Karte X von Y</div>
+            </div>
+        </div>
+
+        <div style="font-size:16px; font-weight:600; margin-bottom:10px;">Deine Antwort:</div>
+        <div class="challenge-target" id="challengeTarget"></div>
+        
+        <button class="btn small ghost" onclick="undoChallengeLetter()" id="undoChallengeBtn" style="margin-bottom:15px; display:none;">⌫ Letzten Buchstaben entfernen</button>
+        <div id="challengeOptions" class="challenge-options">
+            </div>
+        
+        <div id="challengeResult" style="font-weight:700;font-size:16px;margin-top:15px;display:none"></div>
+        
+        <div id="challengeEnd" style="text-align:center;color:var(--muted);margin-top:30px;display:none">
+            <div style="font-size:22px;font-weight:700;margin-bottom:6px">Challenge beendet!</div>
+            <div id="challengeScore"></div>
+            <button class="btn" onclick="showList()" style="margin-top:15px">Zurück zur Liste</button>
+        </div>
+      </div>
+
+      <div id="statsView" style="display:none">
+        <div style="font-weight:700;font-size:18px;margin-bottom:15px">Lernfortschritt von <span id="statsFolderTitle"></span></div>
+        
+        <div class="stats-grid">
+          <div class="stat-box">
+            <div id="statTotalCards" class="number">0</div>
+            <div class="label">Gesamtzahl Karten</div>
+          </div>
+          <div class="stat-box">
+            <div id="statDueCards" class="number success">0</div>
+            <div class="label">Heute fällig</div>
+          </div>
+          <div class="stat-box">
+            <div id="statScore" class="number">0%</div>
+            <div class="label">Gesamt-Erfolgsquote</div>
+          </div>
+          <div class="stat-box">
+            <div id="statIntervalAvg" class="number">0 d</div>
+            <div class="label">Durchschn. Intervall</div>
+          </div>
+        </div>
+
+        <div style="font-weight:700;font-size:18px;margin-top:30px;margin-bottom:15px">Intervalle (nächste Wiederholung)</div>
+        <div id="statIntervals">
+          <div class="muted" style="text-align:center">Noch keine Daten.</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+<div id="editModal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;display:none;align-items:center;justify-content:center;padding:15px">
+  <div style="background:white;padding:20px;border-radius:14px;box-shadow:0 15px 40px rgba(0,0,0,0.2);width:95%;max-width:400px;display:flex;flex-direction:column;gap:12px">
+    <div style="font-weight:700;font-size:18px">Karte bearbeiten</div>
+    
+    <div style="font-size:14px;color:var(--muted)">Kartentyp: <strong id="modalCardType"></strong> (kann nicht geändert werden)</div>
+    
+    <div style="font-size:14px;font-weight:600">Sprache:</div>
+    <select id="modalLanguageInput">
+        <option value="en">Englisch</option>
+        <option value="de">Deutsch</option>
+        <option value="es">Spanisch</option>
+        <option value="fr">Französisch</option>
+        <option value="it">Italienisch</option>
+    </select>
+    
+    <div style="font-size:14px;font-weight:600" id="modalFrontLabel">Vorderseite:</div>
+    <input id="modalWordInput" type="text" placeholder="Wort (z. B. der Apfel)" style="width:100%">
+    
+    <div id="modalTranslationGroup">
+        <div style="font-size:14px;font-weight:600">Rückseite (Vokabel):</div>
+        <input id="modalTranslationInput" type="text" placeholder="Übersetzung (z. B. the apple)" style="width:100%;margin-top:6px">
+    </div>
+    
+    <div id="modalImageGroup">
+        <div style="font-size:14px;font-weight:600">Rückseite (Bild ersetzen):</div>
+        <input id="modalImageInput" type="file" accept="image/*" style="width:100%;margin-top:6px">
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn" onclick="saveModalEdit()" style="flex:1">Änderungen speichern</button>
+        <button class="btn ghost" onclick="closeEditModal()" style="flex:1">Abbrechen</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ===========================
+    Globaler Zustand & DOM-Cache
+    =========================== */
+const STORAGE_KEY = "vocab_app_v2"; 
+let data = loadData();
+let currentFolder = null;
+let reviewQueue = []; // Haupt-Review-Queue
+let sessionReviewQueue = []; // NEU: Zusätzliche Queue für falsche/neue Karten
+let reviewIndex = 0;
+let cardToEdit = null;
+let testQueue = [];
+let testIndex = 0;
+let testScore = { correct: 0, wrong: 0 };
+
+let challengeQueue = []; // NEU: Für die Buchstaben-Challenge
+let challengeIndex = 0;
+let challengeScore = { correct: 0, wrong: 0 };
+let currentChallengeAnswer = []; // NEU: Vom Nutzer eingegebene Buchstaben
+let currentChallengeCard = null; // NEU
+
+// DOM Caches
+const dom = {
+    folders: document.getElementById("folders"),
+    newFolderName: document.getElementById("newFolderName"),
+    mainTitle: document.getElementById("mainTitle"),
+    statusBadge: document.getElementById("statusBadge"),
+    panel: document.getElementById("panel"),
+    empty: document.getElementById("empty"),
+    addForm: document.getElementById("addForm"),
+    addFormTitle: document.getElementById("addFormTitle"),
+    // Formularfelder
+    cardTypeSelect: document.getElementById("cardTypeSelect"),
+    languageInput: document.getElementById("languageInput"),
+    frontsideLabel: document.getElementById("frontsideLabel"),
+    backsideLabel: document.getElementById("backsideLabel"),
+    translationInput: document.getElementById("translationInput"),
+    wordInput: document.getElementById("wordInput"),
+    imageInput: document.getElementById("imageInput"),
+    saveCardBtn: document.getElementById("saveCardBtn"),
+    listView: document.getElementById("listView"),
+    filterInput: document.getElementById("filterInput"),
+    cardsGrid: document.getElementById("cardsGrid"),
+    listEmpty: document.getElementById("listEmpty"),
+    reviewView: document.getElementById("reviewView"),
+    // Review Elemente
+    reviewModeSelect: document.getElementById("reviewModeSelect"),
+    previewContainer: document.getElementById("previewContainer"),
+    previewImage: document.getElementById("previewImage"),
+    wordWordHint: document.getElementById("wordWordHint"),
+    previewWord: document.getElementById("previewWord"),
+    btnAudio: document.getElementById("btnAudio"),
+    previewTranslation: document.getElementById("previewTranslation"),
+    previewMeta: document.getElementById("previewMeta"),
+    typeInput: document.getElementById("typeInput"),
+    reviewTypingResult: document.getElementById("reviewTypingResult"),
+    sessionReviewStatus: document.getElementById("sessionReviewStatus"), // NEU
+    // Review Buttons
+    btnWrong: document.getElementById("btnWrong"),
+    btnCorrect: document.getElementById("btnCorrect"),
+    btnShowAnswer: document.getElementById("btnShowAnswer"),
+    btnCheckAnswer: document.getElementById("btnCheckAnswer"),
+    btnContinue: document.getElementById("btnContinue"),
+    // Action Buttons
+    btnAddCard: document.getElementById("btnAddCard"),
+    btnStartReview: document.getElementById("btnStartReview"),
+    btnShowList: document.getElementById("btnShowList"),
+    btnShowStats: document.getElementById("btnShowStats"),
+    sidebar: document.getElementById("sidebar"),
+    // Modal-Elemente
+    editModal: document.getElementById("editModal"),
+    modalCardType: document.getElementById("modalCardType"),
+    modalLanguageInput: document.getElementById("modalLanguageInput"),
+    modalFrontLabel: document.getElementById("modalFrontLabel"),
+    modalWordInput: document.getElementById("modalWordInput"),
+    modalTranslationInput: document.getElementById("modalTranslationInput"),
+    modalImageInput: document.getElementById("modalImageInput"),
+    modalTranslationGroup: document.getElementById("modalTranslationGroup"),
+    modalImageGroup: document.getElementById("modalImageGroup"),
+    // Statistik Elemente
+    statsView: document.getElementById("statsView"),
+    statsFolderTitle: document.getElementById("statsFolderTitle"),
+    statTotalCards: document.getElementById("statTotalCards"),
+    statDueCards: document.getElementById("statDueCards"),
+    statScore: document.getElementById("statScore"),
+    statIntervalAvg: document.getElementById("statIntervalAvg"),
+    statIntervals: document.getElementById("statIntervals"),
+    // Test Elemente
+    testView: document.getElementById("testView"),
+    testCardArea: document.getElementById("testCardArea"),
+    testImage: document.getElementById("testImage"),
+    testWord: document.getElementById("testWord"),
+    btnTestAudio: document.getElementById("btnTestAudio"),
+    testMeta: document.getElementById("testMeta"),
+    testOptions: document.getElementById("testOptions"),
+    testResult: document.getElementById("testResult"),
+    btnTestNext: document.getElementById("btnTestNext"),
+    testEnd: document.getElementById("testEnd"),
+    testScore: document.getElementById("testScore"),
+    // Challenge Elemente (NEU)
+    challengeView: document.getElementById("challengeView"),
+    challengePrompt: document.getElementById("challengePrompt"),
+    challengeWord: document.getElementById("challengeWord"),
+    btnChallengeAudio: document.getElementById("btnChallengeAudio"),
+    challengeMeta: document.getElementById("challengeMeta"),
+    challengeTarget: document.getElementById("challengeTarget"),
+    challengeOptions: document.getElementById("challengeOptions"),
+    undoChallengeBtn: document.getElementById("undoChallengeBtn"),
+    challengeResult: document.getElementById("challengeResult"),
+    challengeEnd: document.getElementById("challengeEnd"),
+    challengeScore: document.getElementById("challengeScore")
+};
+
+function loadData(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(raw) return JSON.parse(raw);
+  }catch(e){ console.error("Laden fehlgeschlagen:", e) }
+  return { folders: { "Beispiele": [] } };
+}
+function saveData(){ 
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); 
+    renderFolders(); 
+    renderMain(); 
+}
+
+/* ===========================
+    Mobile Sidebar Toggle & Folder Mgmt
+    =========================== */
+function toggleSidebar() {
+    dom.sidebar.classList.toggle('open');
+}
+function renderFolders(){
+    dom.folders.innerHTML = "";
+    const keys = Object.keys(data.folders);
+    keys.forEach(name=>{
+        const count = (data.folders[name] || []).length;
+        const div = document.createElement("div");
+        div.className = "folder" + (name===currentFolder? " active":"");
+        div.innerHTML = `<span title="${name}">${escapeHtml(name)} (${count})</span>
+          <div style="display:flex;gap:6px;align-items:center">
+            <button title="Umbenennen" class="btn small ghost" onclick="renameFolder(event,'${escapeHtml(name)}')">✏️</button>
+            <button title="Löschen" class="btn small ghost" onclick="deleteFolder(event,'${escapeHtml(name)}')">🗑️</button>
+          </div>`;
+        div.onclick = () => { 
+            currentFolder = name; 
+            hidePanels();
+            showList();
+            renderFolders();
+            renderMain(); 
+            if(window.innerWidth <= 900) toggleSidebar();
+        }
+        dom.folders.appendChild(div);
+    });
+}
+function createFolder(){
+    const name = dom.newFolderName.value.trim();
+    if(!name){ alert("Gib einen Namen ein."); return; }
+    if(data.folders[name]){ alert("Diese Kategorie existiert bereits."); return; }
+    data.folders[name] = [];
+    dom.newFolderName.value = "";
+    currentFolder = name;
+    saveData();
+    showList();
+}
+function renameFolder(ev, oldNameEsc){
+    ev.stopPropagation();
+    const oldName = unescapeHtml(oldNameEsc);
+    const newName = prompt("Neuer Kategoriename:", oldName);
+    if(!newName || newName.trim()==="" || newName === oldName) return;
+    if(data.folders[newName]){ alert("Name bereits vorhanden."); return; }
+    data.folders[newName] = data.folders[oldName];
+    delete data.folders[oldName];
+    if(currentFolder === oldName) currentFolder = newName;
+    saveData();
+}
+function deleteFolder(ev, nameEsc){
+    ev.stopPropagation();
+    const name = unescapeHtml(nameEsc);
+    if(!confirm(`Kategorie "${name}" wirklich löschen? (Alle Karten gehen verloren)`)) return;
+    delete data.folders[name];
+    if(currentFolder === name) currentFolder = null;
+    saveData();
+}
+
+
+/* ===========================
+    Panel / Ansichten
+    =========================== */
+function hidePanels(){
+    [dom.addForm, dom.listView, dom.reviewView, dom.empty, dom.statsView, dom.testView, dom.challengeView].forEach(el => el.style.display = "none");
+}
+function renderMain(){
+    dom.mainTitle.textContent = currentFolder || "Wähle eine Kategorie";
+    
+    const hasFolder = !!currentFolder;
+    dom.btnAddCard.disabled = !hasFolder;
+    dom.btnStartReview.disabled = !hasFolder;
+    dom.btnShowList.disabled = !hasFolder;
+    dom.btnShowStats.disabled = !hasFolder;
+
+    if(hasFolder){
+        renderStatusBadge();
+    } else {
+        dom.statusBadge.style.display = "none";
+        hidePanels();
+        dom.empty.style.display = "block";
+    }
+    renderFolders();
+}
+
+function renderStatusBadge(){
+    const cards = data.folders[currentFolder] || [];
+    const due = cards.filter(c => isCardDue(c)).length;
+    
+    dom.statusBadge.textContent = `${cards.length} K. | ${due} fällig`;
+    dom.statusBadge.className = "status-badge" + (due > 0 ? " success" : "");
+    dom.statusBadge.style.display = "inline-block";
+}
+function showTestView(){
+    if(!currentFolder){ alert("Wähle zuerst eine Kategorie links aus."); return; }
+    const arr = data.folders[currentFolder] || [];
+    if(arr.length < 5){ alert("Für den Testmodus sind mindestens 5 Karten in der Kategorie erforderlich."); return; }
+    
+    hidePanels();
+    dom.testView.style.display = "block";
+    startTest();
+}
+function showChallengeView(){
+    if(!currentFolder){ alert("Wähle zuerst eine Kategorie links aus."); return; }
+    const arr = data.folders[currentFolder] || [];
+    if(arr.filter(c => c.translation && c.translation.length >= 3).length < 2){ 
+        alert("Für die Buchstaben-Challenge sind mindestens 2 Karten mit Übersetzung nötig (mind. 3 Buchstaben lang)."); 
+        return; 
+    }
+    
+    hidePanels();
+    dom.challengeView.style.display = "block";
+    startChallenge();
+}
+
+/* ===========================
+    Statistik
+    =========================== */
+function showStats(){
+    if(!currentFolder){ alert("Wähle zuerst eine Kategorie links aus."); return; }
+    hidePanels();
+    dom.statsView.style.display = "block";
+    renderStats();
+}
+function renderStats(){
+    const cards = data.folders[currentFolder] || [];
+    dom.statsFolderTitle.textContent = currentFolder;
+    const totalCards = cards.length;
+    const dueCards = cards.filter(c => isCardDue(c)).length;
+    const totalCorrect = cards.reduce((sum, c) => sum + (c.correct || 0), 0);
+    const totalWrong = cards.reduce((sum, c) => sum + (c.wrong || 0), 0);
+    const totalAttempts = totalCorrect + totalWrong;
+    const score = totalAttempts > 0 ? Math.round((totalCorrect / totalAttempts) * 100) : 0;
+    const avgInterval = totalCards > 0 
+        ? Math.round(cards.reduce((sum, c) => sum + (c.interval || 1), 0) / totalCards)
+        : 0;
+    dom.statTotalCards.textContent = totalCards;
+    dom.statDueCards.textContent = dueCards;
+    dom.statScore.textContent = `${score}%`;
+    dom.statIntervalAvg.textContent = `${avgInterval} d`;
+    const intervalMap = cards.reduce((map, c) => {
+        const key = c.interval;
+        map[key] = (map[key] || 0) + 1;
+        return map;
+    }, {});
+    let intervalHtml = "";
+    if (totalCards === 0) {
+        intervalHtml = `<div class="muted" style="text-align:center">Keine Karten vorhanden.</div>`;
+    } else {
+        const sortedIntervals = Object.keys(intervalMap)
+            .sort((a, b) => parseInt(a) - parseInt(b));
+        intervalHtml = sortedIntervals.map(interval => `
+            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #eee">
+                <div style="font-weight:600">${interval} Tag(e)</div>
+                <div>${intervalMap[interval]} Karten</div>
+            </div>
+        `).join('');
+    }
+    dom.statIntervals.innerHTML = intervalHtml;
+}
+
+
+/* ===========================
+    Add Card Form & Modal Edit
+    =========================== */
+function updateAddForm(isEditMode = false, currentCardType = 'word-image'){
+    const selectedType = isEditMode ? currentCardType : dom.cardTypeSelect.value;
+    
+    dom.imageInput.value = "";
+    dom.imageInput.removeAttribute('required');
+    dom.translationInput.removeAttribute('required');
+
+    dom.frontsideLabel.style.display = "block";
+    dom.wordInput.style.display = "block";
+    dom.languageInput.style.display = "block";
+
+    if (selectedType === 'word-word') {
+        dom.frontsideLabel.textContent = "Vorderseite (Wort):";
+        dom.backsideLabel.textContent = "Rückseite (Vokabel):";
+        dom.imageInput.style.display = "none";
+        dom.translationInput.style.display = "block";
+        dom.translationInput.setAttribute('required', 'required');
+    } else if (selectedType === 'image-word') {
+        dom.frontsideLabel.textContent = "Vorderseite (Bild):";
+        dom.backsideLabel.textContent = "Rückseite (Wort):";
+        dom.wordInput.style.display = "none";
+        dom.imageInput.style.display = "block";
+        dom.translationInput.style.display = "block";
+        dom.imageInput.setAttribute('required', 'required');
+        dom.translationInput.setAttribute('required', 'required');
+    } else { // word-image
+        dom.frontsideLabel.textContent = "Vorderseite (Wort):";
+        dom.backsideLabel.textContent = "Rückseite (Bild):";
+        dom.imageInput.style.display = "block";
+        dom.translationInput.style.display = "none";
+        dom.imageInput.setAttribute('required', 'required');
+    }
+
+    dom.cardTypeSelect.disabled = isEditMode;
+}
+
+function showAddCard(){
+    if(!currentFolder){ alert("Wähle zuerst eine Kategorie links aus."); return; }
+    
+    hidePanels();
+    cardToEdit = null;
+    dom.addFormTitle.textContent = "Neue Vokabel hinzufügen";
+    dom.wordInput.value = "";
+    dom.translationInput.value = "";
+    dom.imageInput.value = "";
+    dom.cardTypeSelect.value = "word-image";
+    dom.languageInput.value = "en";
+    dom.saveCardBtn.textContent = "Hinzufügen";
+    
+    updateAddForm();
+    dom.addForm.style.display = "block";
+    dom.wordInput.focus();
+}
+
+function addCardFromForm(){
+    const type = dom.cardTypeSelect.value;
+    const word = type === 'image-word' ? "" : dom.wordInput.value.trim();
+    const translation = dom.translationInput.value.trim();
+    const language = dom.languageInput.value;
+
+    if((type === 'word-word' || type === 'word-image') && !word){ 
+        alert("Bitte gib das Wort (Vorderseite) ein."); return; 
+    }
+    if((type === 'word-word' || type === 'image-word') && !translation){
+        alert("Bitte gib die Übersetzung/das Wort (Rückseite) ein."); return;
+    }
+
+    if (type === 'word-word' || type === 'image-word') {
+        const newCard = createNewCard({ word, translation, type, language });
+        data.folders[currentFolder].push(newCard);
+        saveData();
+        alert("✅ Karte hinzugefügt");
+        dom.wordInput.value = "";
+        dom.translationInput.value = "";
+        hidePanels();
+        showList();
+        return;
+    }
+
+    if (type === 'word-image') {
+        const fileEl = dom.imageInput;
+        const file = fileEl.files[0];
+        if(!file){ alert("Bitte wähle ein Bild aus."); return; }
+
+        const reader = new FileReader();
+        reader.onload = function(e){
+            const newCard = createNewCard({
+                word, image: e.target.result, type: 'word-image', language
+            });
+            data.folders[currentFolder].push(newCard);
+            saveData();
+            
+            dom.wordInput.value = "";
+            fileEl.value = "";
+            alert("✅ Karte hinzugefügt");
+            hidePanels();
+            showList();
+        };
+        reader.readAsDataURL(file);
+        return;
+    }
+}
+
+function createNewCard({word, image = null, translation = null, type, language = 'en'}){
+    return {
+        id: "c_" + Date.now() + "_" + Math.floor(Math.random()*9999),
+        word, image, translation, type, language,
+        interval: 1,
+        nextReview: addDaysISO(1),
+        correct:0, wrong:0,
+        // NEU: Hinzufügen des Feldes 'learnedToday' für Session Review
+        learnedToday: false 
+    };
+}
+function openEditModal(id){
+    cardToEdit = data.folders[currentFolder]?.find(x=>x.id===id);
+    if(!cardToEdit) return;
+
+    const cardType = cardToEdit.type || (cardToEdit.image ? 'word-image' : 'word-word');
+    cardToEdit.type = cardType;
+    cardToEdit.language = cardToEdit.language || 'en';
+
+    dom.modalCardType.textContent = cardType === 'word-image' ? 'Wort → Bild' : 
+                                    cardType === 'image-word' ? 'Bild → Wort' : 'Wort → Vokabel';
+    
+    dom.modalLanguageInput.value = cardToEdit.language;
+    dom.modalWordInput.value = cardToEdit.word || "";
+    dom.modalTranslationInput.value = cardToEdit.translation || "";
+    dom.modalImageInput.value = "";
+    
+    dom.modalWordInput.style.display = "block";
+    
+    if (cardType === 'word-word') {
+        dom.modalFrontLabel.textContent = 'Vorderseite (Wort):';
+        dom.modalTranslationGroup.style.display = 'block';
+        dom.modalImageGroup.style.display = 'none';
+    } else if (cardType === 'image-word') {
+        dom.modalFrontLabel.textContent = 'Vorderseite (Bild):';
+        dom.modalWordInput.style.display = 'none';
+        dom.modalTranslationGroup.style.display = 'block';
+        dom.modalImageGroup.style.display = 'block';
+    } else { // word-image
+        dom.modalFrontLabel.textContent = 'Vorderseite (Wort):';
+        dom.modalTranslationGroup.style.display = 'none';
+        dom.modalImageGroup.style.display = 'block';
+    }
+
+    dom.editModal.style.display = 'flex';
+    dom.modalWordInput.focus();
+}
+
+function closeEditModal(){
+    dom.editModal.style.display = 'none';
+    cardToEdit = null;
+}
+
+function saveModalEdit(){
+    if(!cardToEdit) return;
+    const cardType = cardToEdit.type;
+
+    cardToEdit.language = dom.modalLanguageInput.value;
+    let needsSave = true;
+
+    if (cardType === 'word-word' || cardType === 'word-image') {
+        const word = dom.modalWordInput.value.trim();
+        if(!word){ alert("Bitte gib das Wort (Vorderseite) ein."); return; }
+        cardToEdit.word = word;
+    }
+
+    if (cardType === 'word-word' || cardType === 'image-word') {
+        const translation = dom.modalTranslationInput.value.trim();
+        if(!translation){ alert("Bitte gib die Übersetzung/das Wort (Rückseite) ein."); return; }
+        cardToEdit.translation = translation;
+    }
+
+    const file = dom.modalImageInput.files[0];
+    if ((cardType === 'word-image' || cardType === 'image-word') && file) {
+        const reader = new FileReader();
+        reader.onload = function(e){
+            cardToEdit.image = e.target.result;
+            saveData();
+            closeEditModal();
+            renderList();
+            alert("✅ Karte mit neuem Bild gespeichert!");
+        };
+        reader.readAsDataURL(file);
+        return;
+    }
+
+    if (needsSave || !file) {
+        saveData();
+        closeEditModal();
+        renderList();
+        alert("✅ Karte gespeichert!");
+    }
+}
+
+
+function deleteCard(id){
+    if(!confirm("Karte wirklich löschen?")) return;
+    const arr = data.folders[currentFolder];
+    const idx = arr.findIndex(x=>x.id===id);
+    if(idx>=0){ arr.splice(idx,1); saveData(); renderList(); }
+}
+
+/* ===========================
+    List rendering
+    =========================== */
+function showList(){
+    if(!currentFolder){ alert("Wähle eine Kategorie."); return; }
+    hidePanels();
+    dom.listView.style.display = "block";
+    renderList();
+}
+function renderList(){
+    dom.cardsGrid.innerHTML = "";
+    const arr = data.folders[currentFolder] || [];
+    const q = dom.filterInput.value?.toLowerCase() || "";
+    
+    const filteredArr = arr.filter(c => 
+        (c.word && c.word.toLowerCase().includes(q)) || 
+        (c.translation && c.translation.toLowerCase().includes(q))
+    );
+
+    if(filteredArr.length === 0){
+        dom.listEmpty.textContent = arr.length === 0 
+            ? "Diese Kategorie enthält keine Karten." 
+            : "Keine Karten entsprechen dem Filter-Begriff.";
+        dom.listEmpty.style.display = "block";
+    } else {
+        dom.listEmpty.style.display = "none";
+    }
+
+    filteredArr.forEach(card=>{
+        const cardType = card.type || (card.image ? 'word-image' : 'word-word');
+        let cardFront = cardType === 'image-word' ? '[Bild]' : escapeHtml(card.word);
+        let cardBack = '';
+        
+        if (cardType === 'word-word' || cardType === 'image-word') {
+            cardBack = escapeHtml(card.translation);
+        } else { // word-image
+            cardBack = '[Bild]';
+        }
+
+        let typeLabel = '';
+        if (cardType === 'word-word') typeLabel = 'Wort→Wort';
+        else if (cardType === 'image-word') typeLabel = 'Bild→Wort';
+        else typeLabel = 'Wort→Bild';
+        
+        const imageHtml = (cardType === 'word-image' || cardType === 'image-word') 
+            ? `<img src="${card.image}" alt="">` 
+            : '';
+        const langCode = card.language ? ` (${card.language.toUpperCase()})` : '';
+
+        const div = document.createElement("div"); div.className = "card";
+        div.innerHTML = `
+          ${imageHtml}
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div style="max-width:80%">
+                <strong>${cardFront}</strong> ${langCode}
+                <div class="tiny" style="font-style:italic;margin-top:2px;color:var(--accent-dark)">→ ${cardBack}</div>
+                <div class="tiny">${card.correct}✔ • ${card.wrong}✖</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <button class="btn small" onclick="openEditModal('${card.id}')">✏️</button>
+              <button class="btn small ghost" onclick="deleteCard('${card.id}')">🗑️</button>
+            </div>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div class="tiny">${typeLabel} | Intervall: ${card.interval} d</div>
+            <div class="tiny">Nächste: ${card.nextReview}</div>
+          </div>
+        `;
+        dom.cardsGrid.appendChild(div);
+    });
+}
+
+/* ===========================
+    Review system (mit Session-Review)
+    =========================== */
+function startReview(){
+    if(!currentFolder){ alert("Wähle eine Kategorie."); return; }
+
+    const arr = data.folders[currentFolder] || [];
+    
+    // Setze alle Karten als noch nicht 'heute gelernt' zurück
+    arr.forEach(card => card.learnedToday = false);
+
+    reviewQueue = arr.filter(c => isCardDue(c));
+
+    if(reviewQueue.length===0){ alert("Keine Karten fällig für heute!"); return; }
+    
+    reviewQueue = shuffle(reviewQueue);
+    sessionReviewQueue = []; // Leere die Zusatz-Queue
+    reviewIndex = 0;
+    
+    hidePanels();
+    dom.reviewView.style.display = "block";
+    showReviewCard();
+}
+
+function isCardDue(card) {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const nr = new Date(card.nextReview + "T00:00:00");
+    return nr <= today;
+}
+
+function showReviewCard(){
+    dom.sessionReviewStatus.style.display = "none";
+    
+    // 1. Ende des Haupt-Reviews erreicht
+    if(reviewIndex >= reviewQueue.length){
+        // 2. Prüfen, ob eine Session-Review aussteht
+        if(sessionReviewQueue.length > 0){
+            reviewQueue = shuffle(sessionReviewQueue); // Die falsch beantworteten Karten mischen
+            sessionReviewQueue = []; // Session Review leeren für den nächsten Durchlauf
+            reviewIndex = 0;
+            dom.sessionReviewStatus.textContent = `Zusatzwiederholung gestartet: ${reviewQueue.length} Karten.`;
+            dom.sessionReviewStatus.style.display = "block";
+        } else {
+            // 3. Alles abgeschlossen
+            alert("Review abgeschlossen ✅");
+            saveData();
+            hidePanels();
+            showList();
+            return;
+        }
+    }
+    
+    const card = reviewQueue[reviewIndex];
+    const mode = dom.reviewModeSelect.value;
+    const cardType = card.type || (card.image ? 'word-image' : 'word-word');
+    
+    // UI-Zustand zurücksetzen
+    dom.previewContainer.className = 'preview';
+    dom.wordWordHint.style.display = "none";
+    dom.typeInput.style.display = "none";
+    dom.reviewTypingResult.style.display = "none";
+    dom.typeInput.value = "";
+    dom.btnAudio.style.display = "inline-flex";
+
+    // Sichtbarkeit der Buttons
+    dom.btnShowAnswer.style.display = mode === 'show' ? "inline-block" : "none";
+    dom.btnCheckAnswer.style.display = mode === 'type' ? "inline-block" : "none";
+    dom.btnWrong.style.display = mode === 'show' ? "inline-block" : "none";
+    dom.btnCorrect.style.display = mode === 'show' ? "inline-block" : "none";
+    dom.btnContinue.style.display = "none";
+    
+    // Kartendarstellung anpassen
+    dom.previewTranslation.textContent = "???";
+    
+    const wordToShow = card.word || (cardType === 'image-word' ? "Vokabel" : "");
+    const audioContent = cardType === 'image-word' ? card.translation : card.word;
+    dom.btnAudio.setAttribute('data-text', audioContent);
+    dom.btnAudio.setAttribute('data-lang', card.language || 'en');
+
+    if (cardType === 'word-word') {
+        dom.previewContainer.classList.add('word-word');
+        dom.previewWord.textContent = wordToShow;
+        dom.wordWordHint.style.display = "block";
+        dom.wordWordHint.textContent = 'Wort → Vokabel';
+    } else if (cardType === 'image-word') {
+        dom.previewContainer.classList.add('image-first');
+        dom.previewImage.src = card.image;
+        dom.previewWord.textContent = "[Bild] Welche Vokabel gehört dazu?";
+        dom.wordWordHint.textContent = 'Bild → Wort';
+        dom.btnAudio.style.display = "none";
+    } else { // word-image
+        dom.previewContainer.classList.remove('word-word', 'image-first');
+        dom.previewImage.src = card.image;
+        dom.previewWord.textContent = wordToShow;
+    }
+
+    // Tippmodus spezifisch
+    if (mode === 'type') {
+        if (cardType === 'word-word' || cardType === 'image-word') {
+            dom.typeInput.style.display = "block";
+            dom.typeInput.focus();
+            dom.previewTranslation.textContent = "";
+        } else {
+            dom.reviewModeSelect.value = 'show';
+            alert("Tipp-Modus nur für Wort-Wort und Bild-Wort unterstützt. Wechsel zu 'Karte zeigen'.");
+            showReviewCard();
+            return;
+        }
+    }
+    
+    dom.previewMeta.textContent = `Korrekt: ${card.correct} • Falsch: ${card.wrong}`;
+}
+
+function speakWord(){
+    const text = dom.btnAudio.getAttribute('data-text');
+    const lang = dom.btnAudio.getAttribute('data-lang');
+    if(!text) return;
+    
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = lang;
+    
+    const voices = speechSynthesis.getVoices();
+    const voice = voices.find(v => v.lang.startsWith(lang));
+    if (voice) {
+        utterance.voice = voice;
+    }
+
+    speechSynthesis.speak(utterance);
+}
+
+function showAnswer(){
+    const card = reviewQueue[reviewIndex];
+    const cardType = card.type || (card.image ? 'word-image' : 'word-word');
+
+    if (cardType === 'word-word' || cardType === 'image-word') {
+        dom.previewTranslation.textContent = card.translation;
+    } else {
+        dom.previewTranslation.textContent = card.word;
+    }
+}
+
+function checkTypedAnswer() {
+    const card = reviewQueue[reviewIndex];
+    const userAnswer = dom.typeInput.value.trim().toLowerCase();
+    const correctAnswer = card.translation.trim().toLowerCase();
+    
+    const isCorrect = areStringsSimilar(userAnswer, correctAnswer);
+    
+    dom.previewTranslation.textContent = `Richtige Antwort: ${card.translation}`;
+    dom.reviewTypingResult.style.display = "block";
+
+    if (isCorrect) {
+        dom.reviewTypingResult.innerHTML = "✅ **Korrekt!**";
+        dom.reviewTypingResult.className = "success";
+        handleAnswer(true);
+    } else {
+        dom.reviewTypingResult.innerHTML = "❌ **Falsch.** Die korrekte Antwort war oben.";
+        dom.reviewTypingResult.className = "error";
+        handleAnswer(false);
+    }
+}
+
+function handleAnswer(isCorrect) {
+    dom.btnCheckAnswer.style.display = "none";
+    dom.btnContinue.style.display = "inline-block";
+    
+    const card = reviewQueue[reviewIndex];
+    
+    if (isCorrect) {
+        card.correct = (card.correct||0) + 1;
+        // Erhöhen des Intervalls nur, wenn es keine Session-Wiederholung ist ODER wenn es die erste Beantwortung ist
+        if (!card.learnedToday) {
+             card.interval = Math.max(1, Math.round(card.interval * 1.6));
+        }
+    } else {
+        card.wrong = (card.wrong||0) + 1;
+        card.interval = 1;
+        
+        // Bei Falsch: zur Session-Review-Queue hinzufügen
+        if (!sessionReviewQueue.includes(card)) {
+            sessionReviewQueue.push(card);
+        }
+    }
+    
+    // Markieren als heute gelernt
+    card.learnedToday = true;
+
+    card.nextReview = addDaysISO(card.interval);
+    
+    dom.previewMeta.textContent = `Korrekt: ${card.correct} • Falsch: ${card.wrong}`;
+}
+
+function continueReview() {
+    reviewIndex++;
+    saveData();
+    showReviewCard();
+}
+
+function markCorrect(){ 
+    if(dom.reviewModeSelect.value === 'type') return;
+    handleAnswer(true); 
+    reviewIndex++;
+    saveData();
+    showReviewCard();
+}
+
+function markWrong(){ 
+    if(dom.reviewModeSelect.value === 'type') return;
+    handleAnswer(false); 
+    reviewIndex++;
+    saveData();
+    showReviewCard();
+}
+
+
+/* ===========================
+    Test Mode (Multiple Choice)
+    =========================== */
+function startTest(){
+    const allCards = data.folders[currentFolder] || [];
+    testQueue = allCards.filter(c => c.translation && c.word);
+    
+    if(testQueue.length < 4){ 
+        alert("Mindestens 4 Wort-zu-Wort Karten nötig für den Multiple-Choice-Test.");
+        hidePanels();
+        showList();
+        return;
+    }
+
+    testQueue = shuffle(testQueue);
+    testIndex = 0;
+    testScore = { correct: 0, wrong: 0 };
+
+    dom.testEnd.style.display = "none";
+    dom.btnTestNext.style.display = "none";
+    dom.testResult.style.display = "none";
+
+    showTestCard();
+}
+
+function showTestCard(){
+    if(testIndex >= testQueue.length){
+        endTest();
+        return;
+    }
+
+    const currentCard = testQueue[testIndex];
+    const allCards = data.folders[currentFolder].filter(c => c.translation);
+    
+    dom.testMeta.textContent = `Karte ${testIndex + 1} von ${testQueue.length}`;
+    dom.testWord.textContent = currentCard.word;
+
+    dom.btnTestAudio.setAttribute('data-text', currentCard.word);
+    dom.btnTestAudio.setAttribute('data-lang', currentCard.language || 'en');
+
+    if (currentCard.image && currentCard.type === 'word-image') {
+        dom.testImage.innerHTML = `<img src="${currentCard.image}" alt="" style="max-width:100%; max-height:100%; border-radius:8px">`;
+        dom.testImage.style.display = "flex";
+    } else {
+        dom.testImage.style.display = "none";
+    }
+
+    let incorrectAnswers = allCards
+        .filter(c => c.translation !== currentCard.translation)
+        .map(c => c.translation);
+    
+    incorrectAnswers = shuffle(incorrectAnswers).slice(0, 3);
+    
+    let options = [currentCard.translation, ...incorrectAnswers];
+    options = shuffle(options).slice(0, 4);
+    
+    dom.testOptions.innerHTML = options.map((opt, index) => `
+        <button class="option-btn" 
+                onclick="checkTestAnswer(this, '${escapeHtml(opt)}', '${escapeHtml(currentCard.translation)}')">
+            ${escapeHtml(opt)}
+        </button>
+    `).join('');
+    
+    dom.testResult.style.display = "none";
+    dom.btnTestNext.style.display = "none";
+}
+
+function checkTestAnswer(button, selectedAnswerEsc, correctAnswerEsc){
+    const selectedAnswer = unescapeHtml(selectedAnswerEsc);
+    const correctAnswer = unescapeHtml(correctAnswerEsc);
+    const currentCard = testQueue[testIndex];
+    
+    Array.from(dom.testOptions.children).forEach(btn => {
+        btn.disabled = true;
+        if (unescapeHtml(btn.textContent) === correctAnswer) {
+            btn.classList.add('correct-choice');
+        }
+    });
+
+    if(selectedAnswer === correctAnswer){
+        button.classList.add('correct-choice');
+        dom.testResult.textContent = "✅ Richtig!";
+        dom.testResult.className = "success";
+        testScore.correct++;
+        
+        if (isCardDue(currentCard)) {
+            currentCard.correct = (currentCard.correct || 0) + 1;
+            currentCard.interval = Math.max(1, Math.round(currentCard.interval * 1.2));
+            currentCard.nextReview = addDaysISO(currentCard.interval);
+        }
+    } else {
+        button.classList.add('wrong-choice');
+        dom.testResult.textContent = `❌ Falsch. Korrekt: ${correctAnswer}`;
+        dom.testResult.className = "error";
+        testScore.wrong++;
+        
+        if (isCardDue(currentCard)) {
+            currentCard.wrong = (currentCard.wrong || 0) + 1;
+            currentCard.interval = 1;
+            currentCard.nextReview = addDaysISO(1);
+        }
+    }
+
+    dom.testResult.style.display = "block";
+    dom.btnTestNext.style.display = "block";
+    saveData();
+}
+
+function nextTestCard(){
+    testIndex++;
+    showTestCard();
+}
+
+function endTest(){
+    const total = testScore.correct + testScore.wrong;
+    const scorePct = total > 0 ? Math.round((testScore.correct / total) * 100) : 0;
+    
+    dom.testScore.innerHTML = `Du hast **${testScore.correct} von ${total}** Fragen richtig beantwortet (${scorePct}%).`;
+    
+    dom.testCardArea.style.display = "none";
+    dom.testOptions.style.display = "none";
+    dom.btnTestNext.style.display = "none";
+    dom.testResult.style.display = "none";
+    dom.testEnd.style.display = "block";
+}
+
+function speakTestWord() {
+    const text = dom.btnTestAudio.getAttribute('data-text');
+    const lang = dom.btnTestAudio.getAttribute('data-lang');
+    if(!text) return;
+    
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = lang;
+    
+    const voices = speechSynthesis.getVoices();
+    const voice = voices.find(v => v.lang.startsWith(lang));
+    if (voice) {
+        utterance.voice = voice;
+    }
+
+    speechSynthesis.speak(utterance);
+}
+
+/* ===========================
+    Challenge Mode (Buchstaben-Bildung)
+    =========================== */
+
+// Helfer: Erzeugt eine Reihe von Zufallsbuchstaben + den korrekten
+function generateChallengeLetters(correctWord) {
+    const uniqueCorrectLetters = Array.from(new Set(correctWord.toUpperCase().replace(/[^A-Z]/g, ''))).sort();
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const numRandom = Math.max(0, 10 - uniqueCorrectLetters.length); 
+    
+    let randomLetters = [];
+    while (randomLetters.length < numRandom) {
+        const letter = alphabet[Math.floor(Math.random() * alphabet.length)];
+        if (!uniqueCorrectLetters.includes(letter)) {
+            randomLetters.push(letter);
+        }
+    }
+    
+    let finalSet = uniqueCorrectLetters.concat(randomLetters);
+    return shuffle(finalSet);
+}
+
+function startChallenge(){
+    const allCards = data.folders[currentFolder] || [];
+    
+    // Wir nehmen nur Karten mit Übersetzung (die 3+ Buchstaben lang ist)
+    challengeQueue = allCards.filter(c => c.translation && c.translation.length >= 3);
+    
+    if(challengeQueue.length === 0){ 
+        alert("Mindestens eine Karte mit Wort-zu-Wort/Bild-zu-Wort Übersetzung (mind. 3 Zeichen) nötig für die Challenge.");
+        hidePanels();
+        showList();
+        return;
+    }
+
+    challengeQueue = shuffle(challengeQueue);
+    challengeIndex = 0;
+    challengeScore = { correct: 0, wrong: 0 };
+    dom.challengeEnd.style.display = "none";
+    dom.challengeResult.style.display = "none";
+
+    showChallengeCard();
+}
+
+function showChallengeCard(){
+    if(challengeIndex >= challengeQueue.length){
+        endChallenge();
+        return;
+    }
+
+    currentChallengeCard = challengeQueue[challengeIndex];
+    const correctTranslation = currentChallengeCard.translation.toUpperCase().replace(/\s/g, ''); // Leerzeichen ignorieren
+    currentChallengeAnswer = [];
+    
+    dom.challengeMeta.textContent = `Karte ${challengeIndex + 1} von ${challengeQueue.length}`;
+    dom.challengeWord.textContent = currentChallengeCard.word;
+    dom.challengePrompt.textContent = 'Welche Vokabel gehört dazu?';
+    dom.challengeResult.style.display = "none";
+    dom.undoChallengeBtn.style.display = "none";
+
+    dom.btnChallengeAudio.setAttribute('data-text', currentChallengeCard.translation);
+    dom.btnChallengeAudio.setAttribute('data-lang', currentChallengeCard.language || 'en');
+
+    // Korrektes Wort (mit Leerzeichen/Sonderzeichen)
+    const displayWord = currentChallengeCard.translation; 
+    
+    // Zielbereich generieren (für jeden Buchstaben ein Platzhalter)
+    dom.challengeTarget.innerHTML = displayWord.split('').map(char => {
+        if (/[A-Za-z]/.test(char)) {
+            return `<span data-correct="${char.toUpperCase()}" style="width:1.5ch; display:inline-block;">&nbsp;</span>`;
+        } else {
+            return `<span>${char}</span>`; // Sonderzeichen/Leerzeichen sofort anzeigen
+        }
+    }).join('');
+
+    // Buchstaben-Buttons generieren
+    const letters = generateChallengeLetters(correctTranslation);
+    dom.challengeOptions.innerHTML = letters.map(letter => `
+        <button onclick="selectChallengeLetter(this, '${letter}')">${letter}</button>
+    `).join('');
+}
+
+function selectChallengeLetter(button, letter){
+    const displaySpans = Array.from(dom.challengeTarget.children).filter(span => span.dataset.correct);
+    let isFinished = false;
+
+    // Finde den nächsten leeren Platz
+    for (let i = 0; i < displaySpans.length; i++) {
+        if (displaySpans[i].textContent.trim() === '') {
+            displaySpans[i].textContent = letter;
+            currentChallengeAnswer.push({ letter: letter, button: button });
+            button.disabled = true;
+            dom.undoChallengeBtn.style.display = "inline-block";
+            
+            // Wenn der letzte Buchstabe gesetzt wurde, prüfen
+            if (i === displaySpans.length - 1) {
+                isFinished = true;
+            }
+            break;
+        }
+    }
+    
+    if (isFinished) {
+        checkChallengeAnswer();
+    }
+}
+
+function undoChallengeLetter(){
+    if (currentChallengeAnswer.length === 0) return;
+
+    const last = currentChallengeAnswer.pop();
+    last.button.disabled = false;
+
+    // Finde den span, der den Buchstaben hält und leere ihn
+    const displaySpans = Array.from(dom.challengeTarget.children).filter(span => span.dataset.correct);
+    let indexToClear = currentChallengeAnswer.length;
+    
+    // Da wir alle Nicht-Buchstaben-Zeichen ignorieren, müssen wir den span-Index finden
+    // Der letzte belegte span-Index ist gleich der Länge von currentChallengeAnswer
+    if (indexToClear < displaySpans.length) {
+         displaySpans[indexToClear].textContent = '\u00A0'; // Non-breaking space
+    }
+    
+    // Zeige den Lösungs-Button nicht, solange Buchstaben entfernt werden
+    dom.challengeResult.style.display = "none";
+    dom.undoChallengeBtn.style.display = currentChallengeAnswer.length > 0 ? "inline-block" : "none";
+}
+
+function checkChallengeAnswer(){
+    const correctWord = currentChallengeCard.translation.toUpperCase().replace(/[^A-Z]/g, '');
+    const userAnswer = currentChallengeAnswer.map(a => a.letter).join('');
+    
+    // Deaktiviere alle Buttons (Challenge beendet)
+    Array.from(dom.challengeOptions.children).forEach(btn => btn.disabled = true);
+
+    if (userAnswer === correctWord) {
+        dom.challengeResult.innerHTML = "✅ **Richtig!**";
+        dom.challengeResult.className = "success";
+        challengeScore.correct++;
+        
+        // Speichern der Antwort (Wenn fällig, Intervall erhöhen)
+        if (isCardDue(currentChallengeCard)) {
+            currentChallengeCard.correct = (currentChallengeCard.correct || 0) + 1;
+            currentChallengeCard.interval = Math.max(1, Math.round(currentChallengeCard.interval * 1.4));
+            currentChallengeCard.nextReview = addDaysISO(currentChallengeCard.interval);
+        }
+    } else {
+        dom.challengeResult.innerHTML = `❌ **Falsch.** Korrekt: ${currentChallengeCard.translation}`;
+        dom.challengeResult.className = "error";
+        challengeScore.wrong++;
+        
+        // Speichern der Antwort (Wenn fällig, Intervall zurücksetzen)
+        if (isCardDue(currentChallengeCard)) {
+            currentChallengeCard.wrong = (currentChallengeCard.wrong || 0) + 1;
+            currentChallengeCard.interval = 1;
+            currentChallengeCard.nextReview = addDaysISO(1);
+        }
+    }
+    
+    dom.challengeResult.style.display = "block";
+    dom.undoChallengeBtn.style.display = "none"; // Undo-Button ausblenden
+    
+    setTimeout(() => {
+        challengeIndex++;
+        saveData();
+        showChallengeCard();
+    }, 2000); // 2 Sekunden warten, dann zur nächsten Karte
+}
+
+function endChallenge(){
+    const total = challengeScore.correct + challengeScore.wrong;
+    const scorePct = total > 0 ? Math.round((challengeScore.correct / total) * 100) : 0;
+    
+    dom.challengeScore.innerHTML = `Du hast **${challengeScore.correct} von ${total}** Vokabeln richtig gebildet (${scorePct}%).`;
+    
+    dom.challengeOptions.style.display = "none";
+    dom.challengeTarget.style.display = "none";
+    dom.challengeResult.style.display = "none";
+    dom.challengeEnd.style.display = "block";
+    dom.challengePrompt.style.display = "none";
+    dom.challengeWord.style.display = "none";
+    dom.btnChallengeAudio.style.display = "none";
+    dom.challengeMeta.style.display = "none";
+    dom.undoChallengeBtn.style.display = "none";
+}
+
+function speakChallengeWord() {
+    const text = dom.btnChallengeAudio.getAttribute('data-text');
+    const lang = dom.btnChallengeAudio.getAttribute('data-lang');
+    if(!text) return;
+    
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = lang;
+    
+    const voices = speechSynthesis.getVoices();
+    const voice = voices.find(v => v.lang.startsWith(lang));
+    if (voice) {
+        utterance.voice = voice;
+    }
+
+    speechSynthesis.speak(utterance);
+}
+
+
+/* ===========================
+    Utilities & Data
+    =========================== */
+function addDaysISO(days){
+    const d = new Date(); d.setHours(0,0,0,0);
+    d.setDate(d.getDate() + days);
+    return d.toISOString().slice(0,10);
+}
+function shuffle(a){
+    for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]] } return a; 
+}
+function escapeHtml(s){ 
+    return s.replaceAll("'", "&#39;").replaceAll('"','&quot;').replaceAll("<","&lt;").replaceAll(">","&gt;"); 
+}
+function unescapeHtml(s){ 
+    return s.replaceAll("&#39;","'").replaceAll("&quot;",'"').replaceAll("&lt;","<").replaceAll("&gt;",">"); 
+}
+function areStringsSimilar(str1, str2, tolerance = 0.1) {
+    const cleanStr1 = str1.replace(/[^a-z0-9]/g, '');
+    const cleanStr2 = str2.replace(/[^a-z0-9]/g, '');
+    if (cleanStr1 === cleanStr2) return true;
+    if (cleanStr1.length === 0 || cleanStr2.length === 0) return false;
+    const len1 = cleanStr1.length;
+    const len2 = cleanStr2.length;
+    const maxLen = Math.max(len1, len2);
+    const matrix = [];
+    for (let i = 0; i <= len1; i++) matrix[i] = [i];
+    for (let j = 0; j <= len2; j++) matrix[0][j] = j;
+    for (let i = 1; i <= len1; i++) {
+        for (let j = 1; j <= len2; j++) {
+            const cost = cleanStr1[i - 1] === cleanStr2[j - 1] ? 0 : 1;
+            matrix[i][j] = Math.min(
+                matrix[i - 1][j] + 1,
+                matrix[i][j - 1] + 1,
+                matrix[i - 1][j - 1] + cost
+            );
+        }
+    }
+    const distance = matrix[len1][len2];
+    return distance <= Math.ceil(maxLen * tolerance);
+}
+
+function exportAll(){
+    const blob = new Blob([JSON.stringify(data)], {type:"application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "vokabeln_export.json"; document.body.appendChild(a); a.click();
+    a.remove(); URL.revokeObjectURL(url);
+}
+
+function importFile(e){
+    const f = e.target.files[0];
+    if(!f) return;
+    const r = new FileReader();
+    r.onload = function(evt){
+        try{
+            const imported = JSON.parse(evt.target.result);
+            if(!imported || typeof imported.folders !== 'object'){ 
+                alert("Ungültiges Format. Die Datei muss ein Objekt mit einem 'folders'-Schlüssel enthalten."); 
+                return; 
+            }
+            
+            let mergeCount = 0;
+            for(const k of Object.keys(imported.folders)){
+                if(!data.folders[k]) data.folders[k] = [];
+                
+                const cards = (imported.folders[k] || []).map(c=>{
+                    if(!c.id || data.folders[k].some(existing => existing.id === c.id)) {
+                        c.id = "c_" + Date.now() + "_" + Math.floor(Math.random()*9999);
+                    }
+                    c.type = c.type || (c.image && c.word ? 'word-image' : (c.image ? 'image-word' : 'word-word'));
+                    c.translation = c.translation || null;
+                    c.image = c.image || null;
+                    c.language = c.language || 'en';
+                    c.interval = c.interval || 1;
+                    c.nextReview = c.nextReview || addDaysISO(1);
+                    c.correct = c.correct || 0;
+                    c.wrong = c.wrong || 0;
+                    c.learnedToday = false; // NEU
+                    return c;
+                });
+                data.folders[k] = data.folders[k].concat(cards);
+                mergeCount += cards.length;
+            }
+            saveData();
+            alert(`Import erfolgreich. ${Object.keys(imported.folders).length} Kategorien und ${mergeCount} Karten wurden hinzugefügt/aktualisiert.`);
+            e.target.value = "";
+        }catch(err){ 
+            alert("Fehler beim Import: " + err.message);
+            e.target.value = "";
+        }
+    };
+    r.readAsText(f);
+}
+
+function resetAll(){
+    if(!confirm("⚠️ ACHTUNG: Alle Daten wirklich löschen und auf Anfang zurücksetzen?")) return;
+    localStorage.removeItem(STORAGE_KEY);
+    data = loadData();
+    currentFolder = null;
+    init();
+}
+
+/* ===========================
+    Initialisierung
+    =========================== */
+(function init(){
+    if(Object.keys(data.folders).length === 0){
+        data.folders["Beispiele"] = [];
+        saveData();
+    }
+    
+    if (!currentFolder || !data.folders[currentFolder]) {
+        currentFolder = Object.keys(data.folders)[0] || null;
+    }
+    
+    renderFolders();
+    renderMain();
+    
+    if(currentFolder) {
+        showList();
+    } else {
+        hidePanels();
+        dom.empty.style.display = "block";
+    }
+})();
+
+// Debugging-Helfer
+window._data = data;
+window.saveData = saveData;
+</script>
+
+</body>
+</html>

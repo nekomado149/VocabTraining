@@ -1,0 +1,21 @@
+{
+  "name": "Vokabel-Trainer",
+  "short_name": "Vokabeln",
+  "description": "Dein persönlicher Vokabeltrainer mit Spaced Repetition.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#ffecd2",
+  "theme_color": "#7bdff6",
+  "icons": [
+    {
+      "src": "icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
